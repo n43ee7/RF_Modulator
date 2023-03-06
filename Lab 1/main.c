@@ -1,7 +1,8 @@
-// CSE 4377/5377 | Baseband Modulator
-// University of Texas at Arlington
-// (c) Nabeel Nayyar
-
+// CSE 4377 | University of Texas at Arlington
+// Nabeel Nayyar | Michael Allen
+// Base-band Modulator Console
+//
+//
 // Target Platform: EK-TM4C123GXL
 // Target uC:       TM4C123GH6PM
 // System Clock:    40 MHz (Formerly 80MHz Setting)
@@ -14,13 +15,13 @@
 //   > ~LDAC on PA4
 
 // Device includes, defines, and assembler directives
+#include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
 #include <ctype.h>
-#include <stdio.h>
 #include <math.h>
 #include <tm4c123gh6pm.h>
 #include "inc/clock.h"
@@ -30,9 +31,9 @@
 #include "inc/uart0.h"
 #include "inc/wait.h"
 
+
 // System Constrains
 #define MAX_CHARS 80    // Maximum String Characters
-
 #define FCYC 40e6       // FC Cycles for SPI
 #define FDAC 20e6       // F Cycles for DAC
 #define FS 100000       // FS Sample Rate
@@ -54,13 +55,71 @@
 #define D_RES_MAX 4095          // DAC Maximum Resolution
 #define D_RES_MIN 0             // DAC Minimum Resolution
 #define D_VREF 2.048            // DAC Voltage Reference
+#define TWO_32 4294967296
 
 int WRITE_Q = CHAN_Q_START; // Channel A = I OUTPUT
 int WRITE_I = CHAN_I_START; // Channel B = Q OUTPUT
 
 // Defining the Lookup tables for the Instance
-uint16_t LUT_I[4095];
-uint16_t LUT_Q[4095];
+uint16_t LUT_I[4096];
+uint16_t LUT_Q[4096];
+
+// Sine mode Global Variables
+bool SinMode = false;
+
+// For Channel I
+int IntCn_I = 0; int Inc_B_I = 1;
+uint32_t phi_I = 0; int fO_I = 10000;
+
+// For Channel Q
+int IntCn_Q = 0; int Inc_B_Q = 1;
+uint32_t phi_Q = 0; int fO_Q = 10000;
+
+
+// ===================== Modulation Guides =========================
+// Data structures and variables for Modulation of constellations
+//
+// Enumeration data structure for Modulation for modulation guide
+enum mode { raw, dc, sine, bpsk, qpsk, psk8, qam16 };
+
+// Modulation Symbol Guide as follows:
+uint32_t symbolsPerMod = {1, 1, 1, 1, 1, 1, 2, 3, 4, 6};
+
+
+// Channel Q Gain
+#define Q_GAIN ((4095 - 175) / 2)
+// Channel I Gain
+#define I_GAIN ((4095 - 190) / 2)
+
+int32_t OOK_I[2] = {0 , I_GAIN};
+int32_t OOK_Q[2] = {0, 0};
+
+bool Const_State = false;
+int loopval = 1;
+
+int32_t BPSK_I[2] = {I_GAIN, -I_GAIN};
+int32_t BPSK_Q[2] = {0, 0};
+
+int32_t QPSK_I[2] = {I_GAIN, -I_GAIN};
+int32_t QPSK_Q[2] = {Q_GAIN, -Q_GAIN};
+
+int32_t PSK8_I[8] = {I_GAIN*1.00, I_GAIN*0.71, -I_GAIN*0.71, I_GAIN*0.00,
+                     I_GAIN*0.71, -I_GAIN*0.00, -I_GAIN*1.00, -I_GAIN*0.71};
+int32_t PSK8_Q[8] = {Q_GAIN*0.00, Q_GAIN*0.71, Q_GAIN*0.71, Q_GAIN*1.00,
+                     -Q_GAIN*0.71, -Q_GAIN*1.00, -Q_GAIN*0.00, -Q_GAIN*0.71};
+
+int32_t QUAM16_I[4] = {-I_GAIN*1.00, -I_GAIN*0.33, I_GAIN*1.00, I_GAIN*0.33};
+int32_t QUAM16_Q[4] = {-Q_GAIN*1.00, -Q_GAIN*0.33, Q_GAIN*1.00, Q_GAIN*0.33};
+
+int32_t QUAM64_I[8] = {-I_GAIN*1.00, -I_GAIN*0.71, -I_GAIN*0.14, -I_GAIN*0.43,
+                      I_GAIN*1.00, I_GAIN*0.71, I_GAIN*0.14, I_GAIN*0.43};
+int32_t QUAM64_Q[8] = {-Q_GAIN*1.00, -Q_GAIN*0.71, -Q_GAIN*0.14, -Q_GAIN*0.43,
+                      Q_GAIN*1.00, Q_GAIN*0.71, Q_GAIN*0.14, Q_GAIN*0.43};
+
+enum mod ModulationMode;    // Defining the Modulation mode for the Transmission
+// =================================================================
+// Tone Modulation Command Vars
+bool ToneMode = false;
 
 // Declaring the Instances of functions declared in this scope
 void initHw();
@@ -70,17 +129,18 @@ void setSymbolRate(float sampleRate);
 void symbolTimerIsr();
 void RAWModulator(char *OPTION, int N);
 void DCModulator(char *OPTION, float DC);
-void SineModulator(char *OPTION);
-
+void SineModulator(char *OPTION, int f, float AMP);
+void ToneModulator(int f, float AMP);
+void Modulator(char *OPTION, char *data);
 
 // Code Main Routine
 int main(void) {
     initHw();   // Running Hardware Setup instance
 
     // Display Header
-    putsUart0("===============================\n\r");
-    putsUart0("CSE 4377 > Modulator Console\n\r");
-    putsUart0("===============================\n\r");
+    putsUart0("===============================================\n\r");
+    putsUart0("         CSE 4377 > Modulator Console\n\r");
+    putsUart0("===============================================\n\r");
 
     // Main instance of the Program
     while (true) {
@@ -113,6 +173,7 @@ void initHw() {
 
     // Initialize symbol timer
     initSymbolTimer();
+
 }
 
 // Sub-routine for creating a shell instance on UART
@@ -120,7 +181,6 @@ void processShell() {
     bool knownCommand = false; bool end; char c;
     static char strInput[MAX_CHARS+1];
     char* token; static uint8_t count = 0;
-
     if (kbhitUart0()) {
         c = tolower(getcUart0());
         end = (c == 13) || (count == MAX_CHARS);
@@ -163,25 +223,31 @@ void processShell() {
             // sine a|b FREQ [AMPL [PHASE [DC] ] ]
             if (strcmp(token, "sine") == 0) {
                 knownCommand = true;
-                char *OPTION;
+                char *OPTION; int f; float AMP;
                 OPTION = strtok(NULL, " ");
+                f = atoi(strtok(NULL, " "));
+                AMP = atof(strtok(NULL, " "));
+
                 if (strcmp(OPTION, "i") == 0 || strcmp(OPTION, "q") == 0){
-                    SineModulator(OPTION);
+                    SineModulator(OPTION, f, AMP);
                 }
-
-
             }
 
             // tone FREQ [AMPL [PHASE [DC] ] ]
             if (strcmp(token, "tone") == 0) {
-                knownCommand = true;
-                // add code to process command
+                knownCommand = true; int f; float AMP;
+                f = atoi(strtok(NULL, " "));
+                AMP = atof(strtok(NULL, " "));
+                ToneModulator(f, AMP);
             }
 
             // mod bpsk|qpsk|8psk|16qam
             if (strcmp(token, "mod") == 0) {
                 knownCommand = true;
-                // add code to process command
+                char *OPTION; char *String;
+                OPTION = strtok(NULL, " ");
+                String = strtok(NULL, " ");
+                Modulator(OPTION, String);
             }
 
             // filter FILTER
@@ -198,7 +264,7 @@ void processShell() {
             }
 
             if (!knownCommand){
-                putsUart0("[!] Invalid command\n\r");
+                putsUart0("[!] Invalid command type 'help' lmao\n\r");
             }
 
             // COMMAND: help + Invalid Command Directory
@@ -217,6 +283,7 @@ void processShell() {
                 putsUart0("        DC   = [-0.5, 0.5] V\n\r");
                 putsUart0("        RAW  = [0, 4095] LSb\n\r");
             }
+        putsUart0("\n\r");
         }
     }
 }
@@ -231,8 +298,8 @@ void initSymbolTimer(void) {
     TIMER1_CTL_R &= ~TIMER_CTL_TAEN;                 // turn-off timer before reconfiguring
     TIMER1_CFG_R = TIMER_CFG_32_BIT_TIMER;           // configure as 32-bit timer (A+B)
     TIMER1_TAMR_R = TIMER_TAMR_TAMR_PERIOD;          // configure for periodic mode (count down)
-    TIMER1_TAILR_R = round(FCYC/FS);                 // set load value to match sample rate
-    //TIMER1_TAILR_R = 2000;
+    //TIMER1_TAILR_R = round(FCYC/FS);                 // set load value to match sample rate
+    TIMER1_TAILR_R = 200000;
     TIMER1_IMR_R = TIMER_IMR_TATOIM;                 // turn-on interrupts for timeout in timer module
     TIMER1_CTL_R |= TIMER_CTL_TAEN;                  // turn-on timer
     enableNvicInterrupt(INT_TIMER1A);                // turn-on interrupt 37 (TIMER1A) in NVIC
@@ -241,18 +308,32 @@ void initSymbolTimer(void) {
 
 void setSymbolRate(float sampleRate) {
     TIMER1_TAILR_R = round(FCYC/sampleRate);
-
 }
 
-// Symbol timer called by timer 1
+// Interrupt service routine for triggering write to I/Q channels of the DAC
 void symbolTimerIsr() {
     // Trigger LDAC
     setPinValue(LDAC, false);
     _delay_cycles(10);
     setPinValue(LDAC, true);
+
+    // Using SinMode command to Write sin functions
+    if (SinMode) {
+        RAWModulator("i", LUT_I[IntCn_I]);
+        RAWModulator("q", LUT_Q[IntCn_Q]);
+    }
+
+    if (Const_State){
+        RAWModulator("i", (-PSK8_I[IntCn_I] + 2135));
+        RAWModulator("q", (-PSK8_Q[IntCn_Q] + 2135));
+    }
     // Write to SPI Port
     SSI0_DR_R = WRITE_Q;
     SSI0_DR_R = WRITE_I;
+
+    // Interrupt revolving counter. (24.272 Hz)
+    IntCn_I = (IntCn_I + Inc_B_I) % loopval;   // Channel I
+    IntCn_Q = (IntCn_Q + Inc_B_Q) % loopval;   // Channel Q
 
     // Disable the interrupt
     TIMER1_ICR_R = TIMER_ICR_TATOCINT;
@@ -274,6 +355,7 @@ void RAWModulator(char *OPTION, int N) {
     }
 }
 
+// Generating a DC Signal on specified output
 void DCModulator(char *OPTION, float DC){
     int DACval = 0;
     // Calculating the RAW DAC value for the input DC voltage
@@ -282,25 +364,74 @@ void DCModulator(char *OPTION, float DC){
     RAWModulator(OPTION, DACval);
 }
 
-void SineModulator(char *OPTION) {
 
+// Modulating a Sine wave according to the parameters
+void SineModulator(char *OPTION, int f, float AMP) {
     // LUT elements
     int i; double Max = 4096; double temp;
+    loopval = Max;
 
-    // Selecting
-    if (strcmp(OPTION, "i") == 0 ){
+    // Calculating the Delta Phi for an increment in the phase
+    if(strcmp(OPTION, "i") == 0) {
+        phi_I = (f * TWO_32 ) / FS;
+        Inc_B_I = phi_I >> 20;
+
+    } else if (strcmp(OPTION, "q") == 0){
+        phi_Q = (f * TWO_32 ) / FS;
+        Inc_B_Q = phi_Q >> 20;
+    }
+
+    // Selecting Wave streaming mode
+    if (strcmp(OPTION, "i") == 0){
         // LUT Population For DAC I (A)
-        for (i = 0; i <= 4095; i++){
+        for (i = 0; i <= 4095; i++) {
             temp = sin(((double) i /Max) * 2 * M_PI);
-            LUT_I[i] = (uint16_t) ((4095 - 190) / 2) * temp + (2135 + 190);
+            LUT_I[i] = (uint16_t) (((4095 - 190) / 2) * temp + (2135 + 0));
         }
+        SinMode = true;
     }
     else if(strcmp(OPTION, "q") == 0){
-    // LUT For DAC Q (B)
-    for (i = 0; i <= 4095; i++){
-        temp = cos(((double) i /Max) * 2 * M_PI);
-        LUT_Q[i] = (uint16_t) ((4095 - 175) / 2) * temp + (2135 + 175);
+       // Write the Sin function to the Channel
+       // LUT For DAC Q (B)
+       for (i = 0; i <= 4095; i++){
+           temp = cos(((double) i /Max) * 2 * M_PI);
+           LUT_Q[i] = (uint16_t) (((4095 - 175) / 2) * temp + (2135 + 0));
+        }
+        SinMode = true;
     }
-    // Write the Sin function to the Channel
+}
+
+// Tone Modulator for Outputting I/Q
+void ToneModulator(int f, float AMP) {
+    ToneMode = true;
+    SineModulator("i", f, AMP);
+    SineModulator("q", f, AMP);
+}
+
+// Modulating a Signal in any specified channel
+void Modulator(char *OPTION, char *data) {
+//    int loc[strlen(data)]; int i;
+    // Extracting the Data string to ASCII vals
+//    for (i = 0; i >= strlen(data); i++){
+//        loc[i] = (int) &(data+i);
+//    }
+
+    if (strcmp(OPTION, "ook") == 0){
+
+    } else if (strcmp(OPTION, "bpsk") == 0) {
+        loopval = 2;
+        Const_State = true;
+    } else if (strcmp(OPTION, "qpsk") == 0) {
+
+
+    } else if (strcmp(OPTION, "8psk") == 0) {
+        loopval = 8;
+        Const_State = true;
+    } else if (strcmp(OPTION, "16qam") == 0){
+
+    } else if (strcmp(OPTION, "64qam") == 0){
+
+    } else {
+        return;
     }
 }
