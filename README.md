@@ -7,12 +7,12 @@ This repository contains the source code and documentation for an RF Modulator B
 The RF Modulator project aims to provide a practical understanding of RF modulation techniques and their implementation. By leveraging the power of Software Defined Radio (SDR), the project explores the design and construction of an various types of signal Modulation from scratch in C.
 
 ## Key Components of the RF Modulator project
-Modulator Design: _(Baseband Signal Generator)
+Modulator Design: _(Baseband Signal Generator)_
 - Texas Instruments Tiva C TM4C123GH6PM evaluation board
 - MCP4822 Dual channel DAC
 - MAC660 Voltage Converter
 - TLC072 Dual Channel Op-Amp
-Testing: _(After Baseband Signal is generated to RF Frequency 900 MHz)
+Testing: _(After Baseband Signal is generated to RF Frequency 900 MHz)_
 - Quorvo SBB5089Z InGaP HBT Active Bias MMIC Amplifier.
 - 20 dB DC Block (RF) 
 - SMA Male to Male Connector bullets
