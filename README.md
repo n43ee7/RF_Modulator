@@ -80,4 +80,4 @@ Please ensure that your contributions align with the project's coding style, gui
 
 ## License
 
-The RF Modulator project is licensed under the [MIT License](LICENSE). Any usage is the user's sole responsibility. This repository may not be used for any accademic work. Accademic integrity policies may apply and owner does not claim misuse of this repository. This repository is solely for educational purposes. Please Look into [FCC RF Low Power transmission]()
+The RF Modulator project is licensed under the [MIT License](LICENSE). Any usage is the user's sole responsibility. This repository may not be used for any accademic work. Accademic integrity policies may apply and owner does accept any liability on the misuse of the contents of repository. This repository is solely for documentation purpose of the owner's research. Please Look into [FCC RF Low Power emission and transmission Guidelines]() before implementing any radio application
