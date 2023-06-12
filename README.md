@@ -12,7 +12,7 @@ Modulator Design: _(Baseband Signal Generator)_
 - MCP4822 Dual channel DAC
 - MAC660 Voltage Converter
 - TLC072 Dual Channel Op-Amp
-Testing: _(After Baseband Signal is generated to RF Frequency 900 MHz)_
+Testing: _(After: Baseband Signal is generated to RF Frequency 900 MHz)_
 - Quorvo SBB5089Z InGaP HBT Active Bias MMIC Amplifier.
 - 20 dB DC Block (RF) 
 - SMA Male to Male Connector bullets
