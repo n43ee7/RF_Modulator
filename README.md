@@ -22,7 +22,7 @@ Testing: _(After: Baseband Signal is generated to RF Frequency 900 MHz)_
 ## Repository Structure
 The repository is organized as follows:
 
-- `src/`: Contains the source code files for the Baseband Signal Modulator.
+- `source/`: Contains the source code files for the Baseband Signal Modulator.
 - `docs/`: Includes project documentation/datasheets on equipment used.
 - `images/`: Holds images and visual assets related to the project.
 - `LICENSE`: Specifies the licensing terms for the project.
