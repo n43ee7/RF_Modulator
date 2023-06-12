@@ -1,4 +1,4 @@
-# RF Modulator Project
+# RF Modulator/Signal Generator
 
 This repository contains the source code and documentation for an RF Modulator Baseband Signal generator. The modulator is capable of transmitting and receiving data using various RF modulation techniques, including QPSK, 8PSK, 16QAM, and BPSK (OPSK and other modulation methods have been implemented but not tested yet).
 
